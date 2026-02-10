@@ -1,0 +1,119 @@
+filters:
+  naics_include:
+    - "541715"   # R&D in Physical/Engineering/Life Sciences
+    - "541330"   # Engineering Services
+    - "541511"   # Custom Computer Programming
+    - "541512"   # Computer Systems Design
+    - "541519"   # Other Computer Related Services
+    - "334511"   # Search/Detection/Navigation Instruments
+    - "334290"   # Other Communications Equipment
+    - "517919"   # All Other Telecommunications
+    - "541990"   # All Other Professional/Scientific/Technical
+  preferred_notice_types:
+    - "Sources Sought"
+    - "Request for Information"
+    - "Combined Synopsis/Solicitation"
+    - "Special Notice"
+    - "Presolicitation"
+  exclude_notice_types:
+    - "Award Notice"
+    - "Intent to Bundle"
+    - "Justification and Approval"
+  posted_from_days: 30
+
+keywords:
+  positive:
+    # Ceradon core (WiFi CSI / through-wall)
+    wifi sensing: 8
+    wifi csi: 8
+    channel state information: 8
+    through-wall: 8
+    through wall: 8
+    sttw: 8
+    sense through the wall: 8
+    rf sensing: 7
+    rf detection: 6
+    human presence detection: 7
+    occupancy detection: 6
+    non-contact sensing: 6
+    # ISR / surveillance
+    isr: 4
+    intelligence surveillance: 4
+    persistent surveillance: 5
+    situational awareness: 3
+    sigint: 3
+    geoint: 3
+    geospatial intelligence: 3
+    # Drone / UxS
+    uas: 4
+    uav: 4
+    ugv: 3
+    uxs: 4
+    unmanned: 3
+    drone detection: 6
+    counter-uas: 5
+    c-uas: 5
+    counter uas: 5
+    small uas: 4
+    autonomous: 3
+    robotics: 3
+    # Electronic warfare / RF
+    electronic warfare: 4
+    ew: 2
+    spectrum sensing: 5
+    rf: 2
+    radar: 3
+    # R&D / prototyping
+    sbir: 6
+    sttr: 6
+    prototype: 5
+    experimentation: 4
+    demonstration: 4
+    r&d: 4
+    research: 3
+    technology development: 4
+    proof of concept: 5
+    # Tactical / SOF
+    tactical: 3
+    special operations: 4
+    socom: 4
+    sofwerx: 5
+    edge computing: 3
+    austere: 3
+    mesh: 2
+    atak: 3
+    # Sensor tech
+    sensor: 3
+    sensing: 3
+    detection: 2
+    classification: 2
+  negative:
+    construction: 5
+    janitorial: 5
+    grounds maintenance: 5
+    facilities maintenance: 4
+    office supplies: 4
+    furniture: 4
+    license renewal: 4
+    reseller: 4
+    food service: 4
+    laundry: 4
+    custodial: 4
+    paving: 5
+    roofing: 5
+    plumbing: 5
+    hvac: 4
+    landscaping: 5
+    painting: 4
+    moving services: 4
+    waste removal: 4
+
+scoring:
+  include_in_digest_score: 8
+  naics_match_boost: 4
+  notice_type_boost: 3
+  set_aside_boost: 3
+  deadline_urgency_boost: 2
+
+digest:
+  max_items: 50

@@ -104,7 +104,7 @@ def upsert_opportunity(
     reasons: List[str],
 ) -> bool:
     dedupe_key = compute_dedupe_key(normalized)
-    created_at = dt.datetime.utcnow().isoformat()
+    created_at = dt.datetime.now(dt.timezone.utc).isoformat()
     with _connect(db_path) as conn:
         try:
             conn.execute(
@@ -153,7 +153,7 @@ def upsert_opportunity(
 
 
 def fetch_since_days(db_path: Path, days: int) -> Iterable[sqlite3.Row]:
-    cutoff = (dt.datetime.utcnow() - dt.timedelta(days=days)).isoformat()
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).isoformat()
     with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT * FROM opportunities WHERE created_at >= ? ORDER BY score DESC",

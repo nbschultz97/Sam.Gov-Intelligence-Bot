@@ -55,7 +55,7 @@ class JsonFormatter(logging.Formatter):
             "process",
         }
         payload = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(tz=None).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
             "logger": record.name,
@@ -110,13 +110,32 @@ def _load_client() -> SamClient:
     )
 
 
-def _build_query_params(days: int) -> Dict[str, Any]:
-    posted_from = (datetime.utcnow() - timedelta(days=days)).strftime("%m/%d/%Y")
-    posted_to = datetime.utcnow().strftime("%m/%d/%Y")
-    return {
+SEARCH_KEYWORD_GROUPS = [
+    # Core Ceradon — WiFi sensing / through-wall
+    "wifi sensing OR through-wall OR channel state information OR STTW OR rf sensing",
+    # ISR / surveillance / SIGINT
+    "ISR surveillance OR persistent surveillance OR SIGINT OR geospatial intelligence",
+    # Drone / counter-UAS
+    "counter-UAS OR drone detection OR small UAS OR unmanned systems",
+    # SBIR / STTR R&D
+    "SBIR OR STTR prototype sensor",
+    # Electronic warfare / spectrum
+    "electronic warfare OR spectrum sensing OR RF detection",
+    # SOF / tactical
+    "SOCOM OR special operations OR SOFWERX OR tactical sensor",
+]
+
+
+def _build_query_params(days: int, keyword: str | None = None) -> Dict[str, Any]:
+    posted_from = (datetime.utcnow() - timedelta(days=days)).strftime("%m/%d/%Y")  # noqa: DTZ003
+    posted_to = datetime.utcnow().strftime("%m/%d/%Y")  # noqa: DTZ003
+    params: Dict[str, Any] = {
         "postedFrom": posted_from,
         "postedTo": posted_to,
     }
+    if keyword:
+        params["keyword"] = keyword
+    return params
 
 
 def _process_opportunities(
@@ -132,10 +151,8 @@ def _process_opportunities(
             if normalized.get("notice_type") in config.filters.exclude_notice_types:
                 counts["skipped"] += 1
                 continue
-            naics = normalized.get("naics")
-            if naics and naics not in config.filters.naics_include:
-                counts["skipped"] += 1
-                continue
+            # NAICS is now a soft boost in scoring, not a hard filter.
+            # Many SBIR/R&D opportunities lack NAICS or use unexpected codes.
             score, reasons = score_opportunity(normalized, config)
             saved = upsert_opportunity(db_path, normalized, raw, score, reasons)
             if saved:
@@ -148,16 +165,31 @@ def _process_opportunities(
     return counts
 
 
-def run_once(config_path: Path, data_dir: Path) -> None:
+def run_once(config_path: Path, data_dir: Path, no_email: bool = False) -> None:
     config = load_config(config_path)
     db_path = data_dir / "ceradon_sam_bot.sqlite"
     init_db(db_path)
 
     client = _load_client()
-    params = _build_query_params(config.filters.posted_from_days)
+    seen_ids: set[str] = set()
+    total_counts: Dict[str, int] = {"processed": 0, "saved": 0, "skipped": 0}
 
-    raw_items = client.search_opportunities(params)
-    processed = _process_opportunities(raw_items, config, db_path)
+    for keyword_query in SEARCH_KEYWORD_GROUPS:
+        LOGGER.info("Searching SAM.gov", extra={"keyword": keyword_query})
+        params = _build_query_params(config.filters.posted_from_days, keyword=keyword_query)
+
+        def _deduped_items():
+            for item in client.search_opportunities(params):
+                nid = item.get("noticeId", "")
+                if nid and nid in seen_ids:
+                    continue
+                if nid:
+                    seen_ids.add(nid)
+                yield item
+
+        counts = _process_opportunities(_deduped_items(), config, db_path)
+        for k in total_counts:
+            total_counts[k] += counts[k]
 
     digest_rows = fetch_latest_for_digest(
         db_path,
@@ -165,23 +197,31 @@ def run_once(config_path: Path, data_dir: Path) -> None:
         config.digest.max_items,
     )
 
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER", "noah@ceradonsystems.com")
-    smtp_pass = _require_env("SMTP_PASS")
-    email_to = os.getenv("EMAIL_TO", "noah@ceradonsystems.com")
-    email_from = os.getenv("EMAIL_FROM", "noah@ceradonsystems.com")
-
     body = render_digest(digest_rows)
-    subject = f"Ceradon SAM Digest ({len(digest_rows)} items)"
-    send_email(smtp_host, smtp_port, smtp_user, smtp_pass, email_to, email_from, subject, body)
 
-    LOGGER.info("Run completed", extra={"counts": processed, "digest_items": len(digest_rows)})
+    if no_email:
+        LOGGER.info("Email skipped (--no-email)", extra={"digest_items": len(digest_rows)})
+        print(body)
+    else:
+        smtp_pass = os.getenv("SMTP_PASS", "")
+        if not smtp_pass:
+            LOGGER.warning("SMTP_PASS not set, skipping email. Use --no-email to suppress.")
+            print(body)
+        else:
+            smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+            smtp_port = int(os.getenv("SMTP_PORT", "587"))
+            smtp_user = os.getenv("SMTP_USER", "noah@ceradonsystems.com")
+            email_to = os.getenv("EMAIL_TO", "noah@ceradonsystems.com")
+            email_from = os.getenv("EMAIL_FROM", "noah@ceradonsystems.com")
+            subject = f"Ceradon SAM Digest ({len(digest_rows)} items)"
+            send_email(smtp_host, smtp_port, smtp_user, smtp_pass, email_to, email_from, subject, body)
+
+    LOGGER.info("Run completed", extra={"counts": total_counts, "digest_items": len(digest_rows)})
 
 
-def run_daemon(config_path: Path, data_dir: Path, interval_minutes: int) -> None:
+def run_daemon(config_path: Path, data_dir: Path, interval_minutes: int, no_email: bool = False) -> None:
     while True:
-        run_once(config_path, data_dir)
+        run_once(config_path, data_dir, no_email=no_email)
         time.sleep(interval_minutes * 60)
 
 
@@ -191,10 +231,27 @@ def backfill(config_path: Path, data_dir: Path, days: int) -> None:
     init_db(db_path)
 
     client = _load_client()
-    params = _build_query_params(days)
-    raw_items = client.search_opportunities(params)
-    processed = _process_opportunities(raw_items, config, db_path)
-    LOGGER.info("Backfill completed", extra={"counts": processed})
+    seen_ids: set[str] = set()
+    total_counts: Dict[str, int] = {"processed": 0, "saved": 0, "skipped": 0}
+
+    for keyword_query in SEARCH_KEYWORD_GROUPS:
+        LOGGER.info("Backfill searching", extra={"keyword": keyword_query})
+        params = _build_query_params(days, keyword=keyword_query)
+
+        def _deduped():
+            for item in client.search_opportunities(params):
+                nid = item.get("noticeId", "")
+                if nid and nid in seen_ids:
+                    continue
+                if nid:
+                    seen_ids.add(nid)
+                yield item
+
+        counts = _process_opportunities(_deduped(), config, db_path)
+        for k in total_counts:
+            total_counts[k] += counts[k]
+
+    LOGGER.info("Backfill completed", extra={"counts": total_counts})
 
 
 def export_data(data_dir: Path, since_days: int, fmt: str) -> None:
@@ -258,6 +315,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--interval-minutes", type=int, default=1440, help="Loop interval in minutes"
     )
+    run_parser.add_argument(
+        "--no-email", action="store_true", help="Skip email, print digest to stdout"
+    )
 
     backfill_parser = subparsers.add_parser("backfill", help="Backfill past days")
     backfill_parser.add_argument("--config", required=True, help="Path to config YAML")
@@ -285,10 +345,11 @@ def main() -> None:
     if args.command == "run":
         try:
             config_path = Path(args.config)
+            no_email = getattr(args, "no_email", False)
             if args.daemon:
-                run_daemon(config_path, data_dir, args.interval_minutes)
+                run_daemon(config_path, data_dir, args.interval_minutes, no_email=no_email)
             else:
-                run_once(config_path, data_dir)
+                run_once(config_path, data_dir, no_email=no_email)
         except ConfigError as exc:
             LOGGER.error("Configuration error", extra={"error": str(exc), "run_id": run_id})
             sys.exit(1)
