@@ -4,3 +4,9 @@ __pycache__/
 .pytest_cache/
 data/
 .venv/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.*
