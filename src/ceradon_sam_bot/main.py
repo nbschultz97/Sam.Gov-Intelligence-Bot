@@ -110,31 +110,71 @@ def _load_client() -> SamClient:
     )
 
 
-SEARCH_KEYWORD_GROUPS = [
+# SAM.gov v2 API uses 'title' for keyword search (no general fulltext param).
+# We search by title keywords AND by NAICS codes separately.
+TITLE_SEARCH_TERMS = [
     # Core Ceradon — WiFi sensing / through-wall
-    "wifi sensing OR through-wall OR channel state information OR STTW OR rf sensing",
-    # ISR / surveillance / SIGINT
-    "ISR surveillance OR persistent surveillance OR SIGINT OR geospatial intelligence",
+    "wifi sensing",
+    "through-wall",
+    "through wall",
+    "STTW",
+    "rf sensing",
+    "rf detection",
+    "presence detection",
+    # ISR / surveillance
+    "ISR",
+    "surveillance",
+    "SIGINT",
+    "geospatial",
     # Drone / counter-UAS
-    "counter-UAS OR drone detection OR small UAS OR unmanned systems",
-    # SBIR / STTR R&D
-    "SBIR OR STTR prototype sensor",
+    "counter-UAS",
+    "drone detection",
+    "UAS",
+    "unmanned",
+    "counter uas",
     # Electronic warfare / spectrum
-    "electronic warfare OR spectrum sensing OR RF detection",
+    "electronic warfare",
+    "spectrum sensing",
     # SOF / tactical
-    "SOCOM OR special operations OR SOFWERX OR tactical sensor",
+    "SOCOM",
+    "special operations",
+    "SOFWERX",
+    # R&D / prototyping
+    "SBIR",
+    "STTR",
+    # Sensor tech
+    "sensor",
+    "radar",
+]
+
+# Also search by NAICS codes relevant to Ceradon
+NAICS_SEARCH_CODES = [
+    "541715",  # R&D in Physical/Engineering/Life Sciences
+    "541330",  # Engineering Services
+    "541512",  # Computer Systems Design
+    "334511",  # Search/Detection/Navigation Instruments
+    "334290",  # Other Communications Equipment
 ]
 
 
-def _build_query_params(days: int, keyword: str | None = None) -> Dict[str, Any]:
+def _build_query_params(
+    days: int,
+    title: str | None = None,
+    ncode: str | None = None,
+    ptype: str | None = None,
+) -> Dict[str, Any]:
     posted_from = (datetime.utcnow() - timedelta(days=days)).strftime("%m/%d/%Y")  # noqa: DTZ003
     posted_to = datetime.utcnow().strftime("%m/%d/%Y")  # noqa: DTZ003
     params: Dict[str, Any] = {
         "postedFrom": posted_from,
         "postedTo": posted_to,
     }
-    if keyword:
-        params["keyword"] = keyword
+    if title:
+        params["title"] = title
+    if ncode:
+        params["ncode"] = ncode
+    if ptype:
+        params["ptype"] = ptype
     return params
 
 
@@ -174,11 +214,10 @@ def run_once(config_path: Path, data_dir: Path, no_email: bool = False) -> None:
     seen_ids: set[str] = set()
     total_counts: Dict[str, int] = {"processed": 0, "saved": 0, "skipped": 0}
 
-    for keyword_query in SEARCH_KEYWORD_GROUPS:
-        LOGGER.info("Searching SAM.gov", extra={"keyword": keyword_query})
-        params = _build_query_params(config.filters.posted_from_days, keyword=keyword_query)
+    def _run_search(label: str, params: Dict[str, Any]) -> None:
+        LOGGER.info("Searching SAM.gov", extra={"search": label, "params": {k: v for k, v in params.items() if k != "api_key"}})
 
-        def _deduped_items():
+        def _deduped():
             for item in client.search_opportunities(params):
                 nid = item.get("noticeId", "")
                 if nid and nid in seen_ids:
@@ -187,9 +226,19 @@ def run_once(config_path: Path, data_dir: Path, no_email: bool = False) -> None:
                     seen_ids.add(nid)
                 yield item
 
-        counts = _process_opportunities(_deduped_items(), config, db_path)
+        counts = _process_opportunities(_deduped(), config, db_path)
         for k in total_counts:
             total_counts[k] += counts[k]
+
+    # Search by title keywords
+    for term in TITLE_SEARCH_TERMS:
+        params = _build_query_params(config.filters.posted_from_days, title=term)
+        _run_search(f"title={term}", params)
+
+    # Search by NAICS codes
+    for ncode in NAICS_SEARCH_CODES:
+        params = _build_query_params(config.filters.posted_from_days, ncode=ncode)
+        _run_search(f"naics={ncode}", params)
 
     digest_rows = fetch_latest_for_digest(
         db_path,
@@ -234,9 +283,8 @@ def backfill(config_path: Path, data_dir: Path, days: int) -> None:
     seen_ids: set[str] = set()
     total_counts: Dict[str, int] = {"processed": 0, "saved": 0, "skipped": 0}
 
-    for keyword_query in SEARCH_KEYWORD_GROUPS:
-        LOGGER.info("Backfill searching", extra={"keyword": keyword_query})
-        params = _build_query_params(days, keyword=keyword_query)
+    def _run_search(label: str, params: Dict[str, Any]) -> None:
+        LOGGER.info("Backfill searching", extra={"search": label})
 
         def _deduped():
             for item in client.search_opportunities(params):
@@ -250,6 +298,14 @@ def backfill(config_path: Path, data_dir: Path, days: int) -> None:
         counts = _process_opportunities(_deduped(), config, db_path)
         for k in total_counts:
             total_counts[k] += counts[k]
+
+    for term in TITLE_SEARCH_TERMS:
+        params = _build_query_params(days, title=term)
+        _run_search(f"title={term}", params)
+
+    for ncode in NAICS_SEARCH_CODES:
+        params = _build_query_params(days, ncode=ncode)
+        _run_search(f"naics={ncode}", params)
 
     LOGGER.info("Backfill completed", extra={"counts": total_counts})
 

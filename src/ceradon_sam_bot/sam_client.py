@@ -19,7 +19,7 @@ class SamClientConfig:
     timeout_seconds: int = 30
     max_retries: int = 4
     backoff_seconds: float = 1.5
-    rate_limit_per_second: float = 2.0
+    rate_limit_per_second: float = 0.8
 
 
 class SamClient:
@@ -67,10 +67,11 @@ class SamClient:
                 )
                 time.sleep(sleep_seconds)
 
-    def search_opportunities(self, params: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    def search_opportunities(self, params: Dict[str, Any], max_pages: int = 3) -> Iterable[Dict[str, Any]]:
         page_size = self._config.page_size
         offset = 0
         total_records = None
+        pages_fetched = 0
         while True:
             page_params = dict(params)
             page_params["limit"] = page_size
@@ -81,10 +82,15 @@ class SamClient:
             data = payload.get("opportunitiesData", []) or []
             if total_records is None:
                 total_records = payload.get("totalRecords")
+                LOGGER.info("SAM.gov query matched %s records (capping at %d pages)", total_records, max_pages)
             for item in data:
                 yield item
+            pages_fetched += 1
             if not data:
                 break
             offset += page_size
+            if pages_fetched >= max_pages:
+                LOGGER.info("Reached max pages (%d), moving on", max_pages)
+                break
             if total_records is not None and offset >= int(total_records):
                 break

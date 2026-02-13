@@ -14,7 +14,7 @@ def render_digest(rows: Iterable[object]) -> str:
                 f"   Agency: {row['agency']}",
                 f"   Notice Type: {row['notice_type']}",
                 f"   NAICS: {row['naics']}",
-                f"   Set-Aside: {row['set_aside']}",
+                f"   Set-Aside: {row['set_aside'] or 'N/A'}",
                 f"   Posted: {row['posted_date']}",
                 f"   Deadline: {row['response_deadline']}",
                 f"   Score: {row['score']}",

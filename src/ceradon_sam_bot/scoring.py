@@ -53,7 +53,13 @@ def score_opportunity(opportunity: Dict[str, Any], config: Config) -> Tuple[int,
         reasons.append(f"+{config.scoring.notice_type_boost} notice_type:{notice_type}")
 
     set_aside = str(opportunity.get("set_aside", "")).lower()
-    if "sdvosb" in set_aside or "small business" in set_aside or "sb" == set_aside:
+    set_aside_desc = str(opportunity.get("set_aside_description", "")).lower()
+    set_aside_combined = f"{set_aside} {set_aside_desc}"
+    if "sdvosb" in set_aside_combined or "service-disabled" in set_aside_combined:
+        # Extra boost for SDVOSB (Ceradon's status)
+        score += config.scoring.set_aside_boost
+        reasons.append(f"+{config.scoring.set_aside_boost} sdvosb_match")
+    if "small business" in set_aside_combined or "sb" == set_aside:
         score += config.scoring.set_aside_boost
         reasons.append(f"+{config.scoring.set_aside_boost} set_aside:{set_aside}")
 
