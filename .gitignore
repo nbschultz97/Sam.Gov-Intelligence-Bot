@@ -10,3 +10,12 @@ data/
 .env.local
 .env.production
 .env.*
+
+# Security - auto-added by Reg
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+credentials.json
+.env.local
+.env.production
