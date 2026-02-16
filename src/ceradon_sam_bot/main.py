@@ -163,8 +163,8 @@ def _build_query_params(
     ncode: str | None = None,
     ptype: str | None = None,
 ) -> Dict[str, Any]:
-    posted_from = (datetime.utcnow() - timedelta(days=days)).strftime("%m/%d/%Y")  # noqa: DTZ003
-    posted_to = datetime.utcnow().strftime("%m/%d/%Y")  # noqa: DTZ003
+    posted_from = (datetime.now(tz=None) - timedelta(days=days)).strftime("%m/%d/%Y")
+    posted_to = datetime.now(tz=None).strftime("%m/%d/%Y")
     params: Dict[str, Any] = {
         "postedFrom": posted_from,
         "postedTo": posted_to,
