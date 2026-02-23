@@ -162,6 +162,7 @@ def _build_query_params(
     title: str | None = None,
     ncode: str | None = None,
     ptype: str | None = None,
+    keyword: str | None = None,
 ) -> Dict[str, Any]:
     posted_from = (datetime.now(tz=None) - timedelta(days=days)).strftime("%m/%d/%Y")
     posted_to = datetime.now(tz=None).strftime("%m/%d/%Y")
@@ -171,6 +172,8 @@ def _build_query_params(
     }
     if title:
         params["title"] = title
+    if keyword:
+        params["keyword"] = keyword
     if ncode:
         params["ncode"] = ncode
     if ptype:
@@ -234,6 +237,19 @@ def run_once(config_path: Path, data_dir: Path, no_email: bool = False) -> None:
     for term in TITLE_SEARCH_TERMS:
         params = _build_query_params(config.filters.posted_from_days, title=term)
         _run_search(f"title={term}", params)
+
+    # Broader keyword searches (searches title + description + other fields)
+    KEYWORD_SEARCH_TERMS = [
+        "through wall detection",
+        "wifi sensing",
+        "channel state information",
+        "STTW",
+        "counter-UAS",
+        "SDVOSB",
+    ]
+    for term in KEYWORD_SEARCH_TERMS:
+        params = _build_query_params(config.filters.posted_from_days, keyword=term)
+        _run_search(f"keyword={term}", params)
 
     # Search by NAICS codes
     for ncode in NAICS_SEARCH_CODES:
@@ -302,6 +318,18 @@ def backfill(config_path: Path, data_dir: Path, days: int) -> None:
     for term in TITLE_SEARCH_TERMS:
         params = _build_query_params(days, title=term)
         _run_search(f"title={term}", params)
+
+    KEYWORD_SEARCH_TERMS = [
+        "through wall detection",
+        "wifi sensing",
+        "channel state information",
+        "STTW",
+        "counter-UAS",
+        "SDVOSB",
+    ]
+    for term in KEYWORD_SEARCH_TERMS:
+        params = _build_query_params(days, keyword=term)
+        _run_search(f"keyword={term}", params)
 
     for ncode in NAICS_SEARCH_CODES:
         params = _build_query_params(days, ncode=ncode)
@@ -391,7 +419,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     run_id = str(uuid.uuid4())
-    data_dir = Path(os.getenv("BOT_DATA_DIR", "/var/lib/ceradon-sam-bot"))
+    default_data_dir = (
+        str(Path.home() / ".ceradon-sam-bot")
+        if os.name == "nt"
+        else "/var/lib/ceradon-sam-bot"
+    )
+    data_dir = Path(os.getenv("BOT_DATA_DIR", default_data_dir))
     log_dir = data_dir / "logs"
     _setup_logging(log_dir, run_id)
 
